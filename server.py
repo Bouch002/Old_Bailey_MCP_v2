@@ -160,3 +160,63 @@ def _merge_results(
         if rec["idkey"] not in existing and rec["idkey"] not in pending_keys:
             person["pending_review"].append(rec)
             pending_keys.add(rec["idkey"])
+
+
+# ── GEDCOM parser ────────────────────────────────────────────────────────────
+
+_OFFICER_TERMS = {"police", "constable", "inspector", "detective", "sergeant", "officer"}
+
+
+def _parse_gedcom(gedcom_id: str) -> dict:
+    """Extract birth year, death year, occupation for a GEDCOM individual."""
+    if not GEDCOM_FILE or not Path(GEDCOM_FILE).exists():
+        return {}
+    result: dict = {"birth_year": None, "death_year": None, "occupation": None}
+    found = False
+    in_target = False
+    in_birt = False
+    in_deat = False
+    try:
+        with open(GEDCOM_FILE, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                parts = line.strip().split(" ", 2)
+                if len(parts) < 2:
+                    continue
+                level, tag = parts[0], parts[1]
+                value = parts[2].strip() if len(parts) > 2 else ""
+                if level == "0":
+                    if gedcom_id in line:
+                        in_target = "INDI" in line
+                        if in_target:
+                            found = True
+                    elif in_target:
+                        break
+                    in_birt = in_deat = False
+                    continue
+                if not in_target:
+                    continue
+                if level == "1":
+                    in_birt = tag == "BIRT"
+                    in_deat = tag == "DEAT"
+                    if tag == "OCCU":
+                        result["occupation"] = value
+                if level == "2" and tag == "DATE":
+                    m = re.search(r"\b(\d{4})\b", value)
+                    if m:
+                        yr = int(m.group(1))
+                        if in_birt:
+                            result["birth_year"] = yr
+                        elif in_deat:
+                            result["death_year"] = yr
+    except OSError:
+        return {}
+    return result if found else {}
+
+
+def _occupation_to_role(occupation: Optional[str]) -> str:
+    if not occupation:
+        return "any"
+    occ = occupation.lower()
+    if any(t in occ for t in _OFFICER_TERMS):
+        return "officer"
+    return "any"
