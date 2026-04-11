@@ -174,8 +174,8 @@ class TestFindCrossover:
                     result = server.find_crossover(names=["Gillan", "Walsh"])
                     mock_get.assert_called_once()
                     call_text = mock_get.call_args[0][1]["text"]
-                    assert '"Gillan"' in call_text
-                    assert '"Walsh"' in call_text
+                    assert '+"Gillan"' in call_text
+                    assert '+"Walsh"' in call_text
 
     def test_rejects_fewer_than_two_names(self):
         with _empty_knowledge_dir() as tmpdir:
