@@ -1,10 +1,17 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
+# Local config — contains personal file paths
+.env
 
-# Virtual environments
-.venv
+# Personal research data — never commit
+knowledge/*
+!knowledge/.gitkeep
+
+# Logs — contain real names and API queries
+*.log
+*.log.*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
