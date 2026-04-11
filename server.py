@@ -114,7 +114,7 @@ def _is_range_covered(
     if not date_from and not date_to:
         return bool(person.get("records") or person.get("pending_review"))
     req_from = int(date_from) if date_from else 0
-    req_to = int(date_to) if date_to else 9999
+    req_to = int(date_to) if date_to else 9999  # corpus ends 1913; 9999 is safely beyond
     for r in person.get("date_ranges_covered", []):
         stored_from = int(r[0]) if r[0] else 0
         stored_to = int(r[1]) if r[1] else 9999
@@ -143,9 +143,13 @@ def _merge_results(
             "pending_review": [],
         }
     person = knowledge[key]
+    if gedcom_id and not person.get("gedcom_id"):
+        person["gedcom_id"] = gedcom_id
     person["last_searched"] = date.today().isoformat()
     if date_from or date_to:
-        person["date_ranges_covered"].append([date_from, date_to])
+        entry = [date_from, date_to]
+        if entry not in person["date_ranges_covered"]:
+            person["date_ranges_covered"].append(entry)
     existing = {r["idkey"] for r in person["records"]}
     for rec in records:
         if rec["idkey"] not in existing:
