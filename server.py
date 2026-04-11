@@ -88,3 +88,71 @@ def _date_in_range(idkey: str, year_from: Optional[int], year_to: Optional[int])
     if year_to is not None and year > year_to:
         return False
     return True
+
+
+# ── Knowledge file ───────────────────────────────────────────────────────────
+
+def _load_knowledge() -> dict:
+    if not KNOWLEDGE_FILE.exists():
+        return {}
+    try:
+        return json.loads(KNOWLEDGE_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _save_knowledge(data: dict) -> None:
+    KNOWLEDGE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    KNOWLEDGE_FILE.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def _is_range_covered(
+    person: dict, date_from: Optional[str], date_to: Optional[str]
+) -> bool:
+    if not date_from and not date_to:
+        return bool(person.get("records") or person.get("pending_review"))
+    req_from = int(date_from) if date_from else 0
+    req_to = int(date_to) if date_to else 9999
+    for r in person.get("date_ranges_covered", []):
+        stored_from = int(r[0]) if r[0] else 0
+        stored_to = int(r[1]) if r[1] else 9999
+        if stored_from <= req_from and stored_to >= req_to:
+            return True
+    return False
+
+
+def _merge_results(
+    knowledge: dict,
+    key: str,
+    name: str,
+    gedcom_id: Optional[str],
+    date_from: Optional[str],
+    date_to: Optional[str],
+    records: list,
+    pending: list,
+) -> None:
+    if key not in knowledge:
+        knowledge[key] = {
+            "name": name,
+            "gedcom_id": gedcom_id,
+            "last_searched": date.today().isoformat(),
+            "date_ranges_covered": [],
+            "records": [],
+            "pending_review": [],
+        }
+    person = knowledge[key]
+    person["last_searched"] = date.today().isoformat()
+    if date_from or date_to:
+        person["date_ranges_covered"].append([date_from, date_to])
+    existing = {r["idkey"] for r in person["records"]}
+    for rec in records:
+        if rec["idkey"] not in existing:
+            person["records"].append(rec)
+            existing.add(rec["idkey"])
+    pending_keys = {r["idkey"] for r in person.get("pending_review", [])}
+    for rec in pending:
+        if rec["idkey"] not in existing and rec["idkey"] not in pending_keys:
+            person["pending_review"].append(rec)
+            pending_keys.add(rec["idkey"])
