@@ -36,7 +36,7 @@ database, just a Python script that speaks MCP over stdin/stdout.
 ### Technology
 
 - **Runtime:** Python 3.10+
-- **MCP SDK:** `mcp` (Anthropic's official package — `pip install mcp`)
+- **MCP SDK:** `fastmcp` (FastMCP — `pip install fastmcp`)
 - **HTTP:** `httpx` for async-capable, clean HTTP calls (replaces `urllib`)
 - **No other dependencies** — must stay lightweight and easy to deploy
 
@@ -221,7 +221,7 @@ stderr             — WARNING+ only (surfaces in Claude Desktop MCP panel)
 ```
 oldbailey_mcp_v2/
 ├── server.py          ← entire implementation (single file)
-├── requirements.txt   ← mcp, httpx
+├── requirements.txt   ← fastmcp, httpx
 └── CLAUDE.md          ← this file (rename before use)
 ```
 
@@ -278,6 +278,6 @@ Problems the v2 build should solve for that integration:
 - [ ] `search_person` finds William Dodd as a defendant (hanged 1777)
 - [ ] `batch_search` accepts 3 names and returns a keyed result dict
 - [ ] TTL cache prevents duplicate fetches within a session
-- [ ] `requirements.txt` contains only `mcp` and `httpx`
+- [ ] `requirements.txt` contains only `fastmcp` and `httpx`
 - [ ] `oldbailey_mcp.log` is in `.gitignore`
 
