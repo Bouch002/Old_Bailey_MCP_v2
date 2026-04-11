@@ -120,7 +120,7 @@ class TestFindPerson:
                         1890 <= r["year"] <= 1913 for r in result["records"]
                     )
 
-    def test_gedcom_enrichment_sets_dates(self):
+    def test_gedcom_enrichment_sets_officer_query(self):
         gedcom_data = {"birth_year": 1860, "death_year": 1925, "occupation": "Police Inspector"}
         with _empty_knowledge_dir() as tmpdir:
             path = Path(tmpdir) / "persons.json"
