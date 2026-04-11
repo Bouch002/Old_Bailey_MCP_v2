@@ -132,3 +132,61 @@ class TestFindPerson:
                         params = mock_get.call_args[0][1]
                         # officer role from "Police Inspector" — query should have + terms
                         assert '+"Gillan"' in params["text"]
+
+
+class TestFindCrossover:
+    def test_knowledge_intersection_zero_api_calls(self):
+        existing = {
+            "Gillan": {
+                "name": "Gillan", "gedcom_id": None, "last_searched": "2026-01-01",
+                "date_ranges_covered": [], "pending_review": [],
+                "records": [
+                    {"idkey": "t18990109-146", "year": 1899, "title": "X"},
+                    {"idkey": "t19000101-1",   "year": 1900, "title": "Y"},
+                ],
+            },
+            "Walsh": {
+                "name": "Walsh", "gedcom_id": None, "last_searched": "2026-01-01",
+                "date_ranges_covered": [], "pending_review": [],
+                "records": [
+                    {"idkey": "t18990109-146", "year": 1899, "title": "X"},
+                    {"idkey": "t19010101-2",   "year": 1901, "title": "Z"},
+                ],
+            },
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "persons.json"
+            path.write_text(json.dumps(existing), encoding="utf-8")
+            with patch.object(server, "KNOWLEDGE_FILE", path):
+                with patch.object(server, "_get") as mock_get:
+                    result = server.find_crossover(names=["Gillan", "Walsh"])
+                    mock_get.assert_not_called()
+                    assert len(result["shared_cases"]) == 1
+                    assert result["shared_cases"][0]["idkey"] == "t18990109-146"
+                    assert result["source"] == "knowledge"
+
+    def test_api_fallback_when_name_unknown(self):
+        with _empty_knowledge_dir() as tmpdir:
+            path = Path(tmpdir) / "persons.json"
+            with patch.object(server, "KNOWLEDGE_FILE", path):
+                with patch.object(server, "_get") as mock_get:
+                    mock_get.return_value = _make_raw(1, [_make_hit("t18990109-146")])
+                    result = server.find_crossover(names=["Gillan", "Walsh"])
+                    mock_get.assert_called_once()
+                    call_text = mock_get.call_args[0][1]["text"]
+                    assert '"Gillan"' in call_text
+                    assert '"Walsh"' in call_text
+
+    def test_rejects_fewer_than_two_names(self):
+        with _empty_knowledge_dir() as tmpdir:
+            path = Path(tmpdir) / "persons.json"
+            with patch.object(server, "KNOWLEDGE_FILE", path):
+                result = server.find_crossover(names=["Gillan"])
+                assert "error" in result
+
+    def test_rejects_more_than_five_names(self):
+        with _empty_knowledge_dir() as tmpdir:
+            path = Path(tmpdir) / "persons.json"
+            with patch.object(server, "KNOWLEDGE_FILE", path):
+                result = server.find_crossover(names=["A", "B", "C", "D", "E", "F"])
+                assert "error" in result

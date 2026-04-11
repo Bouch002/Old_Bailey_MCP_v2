@@ -423,6 +423,76 @@ def find_person(
     return response
 
 
+@mcp.tool()
+def find_crossover(
+    names: list,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+) -> dict:
+    """Find cases where two or more people appear together.
+
+    Checks knowledge file first — if all names are known, returns shared cases
+    instantly with zero API calls. Pass 2–5 names or GEDCOM IDs.
+
+    Use this to find conspiracy thread evidence: names that appear in the same trial.
+    """
+    if len(names) < 2:
+        return {"error": "Provide at least 2 names."}
+    if len(names) > 5:
+        return {"error": "Maximum 5 names per crossover search."}
+
+    knowledge = _load_knowledge()
+    year_from = int(date_from) if date_from else None
+    year_to = int(date_to) if date_to else None
+
+    # Knowledge-first: intersect idkey sets if all names known
+    all_known = all(n in knowledge for n in names)
+    if all_known:
+        sets = [
+            {r["idkey"] for r in knowledge[n].get("records", [])}
+            for n in names
+        ]
+        shared_keys = set.intersection(*sets)
+        first_records = {
+            r["idkey"]: r for r in knowledge[names[0]].get("records", [])
+        }
+        shared = [
+            first_records[k] for k in shared_keys
+            if _date_in_range(k, year_from, year_to)
+        ]
+        return {
+            "source": "knowledge",
+            "names": names,
+            "shared_cases": sorted(shared, key=lambda r: r.get("year", 0)),
+        }
+
+    # API fallback: build compound + query
+    parts = [f'+"{n.strip()}"' for n in names]
+    query = " ".join(parts)
+    fetch_size = 50
+    raw = _get("oldbailey_record", {"text": query, "size": fetch_size, "from": 0})
+    result = _extract_hits(raw)
+
+    records = []
+    for hit in result["hits"]:
+        src = hit.get("_source", {})
+        idkey = src.get("idkey") or hit.get("_id", "")
+        if not _date_in_range(idkey, year_from, year_to):
+            continue
+        records.append(_format_record(hit))
+
+    for n in names:
+        _merge_results(knowledge, n, n, None, date_from, date_to, records, [])
+    _save_knowledge(knowledge)
+
+    return {
+        "source": "api",
+        "names": names,
+        "shared_cases": records,
+        "total_found": result["total"],
+    }
+
+
 # ── Entry point ──────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
