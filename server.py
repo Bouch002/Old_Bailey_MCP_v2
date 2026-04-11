@@ -220,3 +220,42 @@ def _occupation_to_role(occupation: Optional[str]) -> str:
     if any(t in occ for t in _OFFICER_TERMS):
         return "officer"
     return "any"
+
+
+# ── Query builder ────────────────────────────────────────────────────────────
+
+_OFFICER_QUERY = '+(inspector constable sergeant detective "police officer" "P.C." "D.C.")'
+
+
+def _build_query(name: str, role: str) -> str:
+    quoted = f'"{name.strip()}"'
+    if role == "officer":
+        return f"+{quoted} +{_OFFICER_QUERY}"
+    return quoted
+
+
+def _role_endpoint(role: str) -> str:
+    if role == "defendant":
+        return "oldbailey_defendant"
+    if role == "victim":
+        return "oldbailey_victim"
+    return "oldbailey_record"
+
+
+def _format_record(hit: dict, snippet_length: int = 400) -> dict:
+    src = hit.get("_source", {})
+    idkey = src.get("idkey") or hit.get("_id", "")
+    images = src.get("images", [])
+    return {
+        "idkey": idkey,
+        "year": _year_from_idkey(idkey),
+        "title": src.get("title", ""),
+        "snippet": (src.get("text", "") or "")[:snippet_length],
+        "collection": src.get("collection", "proceedings"),
+        "offences": src.get("offenceCategories", []),
+        "verdicts": src.get("verdictCategories", []),
+        "punishments": src.get("punishmentCategories", []),
+        "image_url": images[0] if images else None,
+        "div1_idkey": src.get("div1_idkey", idkey),
+        "status": "reviewed",
+    }
