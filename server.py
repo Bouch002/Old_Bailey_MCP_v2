@@ -313,6 +313,116 @@ def get_known(identifier: str) -> str:
     return json.dumps(person, indent=2, ensure_ascii=False)
 
 
+
+# ── Tools ────────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def find_person(
+    name: str,
+    gedcom_id: Optional[str] = None,
+    role: str = "any",
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    offence: Optional[str] = None,
+    size: int = INDEX_THRESHOLD,
+) -> dict:
+    """Search for a person in Old Bailey records (1674–1913).
+
+    Checks the knowledge file first — zero API calls if already found.
+    Returns an index list when results exceed the size threshold; additional
+    cases are written to the knowledge file as pending_review for later review.
+
+    STOP after reviewing the returned records. Only call get_record if a
+    specific trial needs full text and the snippet is insufficient.
+    Do NOT also call search_proceedings for name lookups.
+
+    role options: 'any' (default) | 'defendant' | 'victim' | 'officer'
+    """
+    key = gedcom_id or name
+
+    # GEDCOM enrichment — auto-fill dates and role from family tree file
+    if gedcom_id:
+        gedcom_data = _parse_gedcom(gedcom_id)
+        if date_from is None and gedcom_data.get("birth_year"):
+            date_from = str(gedcom_data["birth_year"])
+        if date_to is None and gedcom_data.get("death_year"):
+            date_to = str(gedcom_data["death_year"])
+        if role == "any" and gedcom_data.get("occupation"):
+            role = _occupation_to_role(gedcom_data["occupation"])
+
+    # Knowledge-first: return from file if already covered
+    knowledge = _load_knowledge()
+    if key in knowledge and _is_range_covered(knowledge[key], date_from, date_to):
+        person = knowledge[key]
+        return {
+            "source": "knowledge",
+            "name": person.get("name", name),
+            "records": person.get("records", []),
+            "pending_count": len(person.get("pending_review", [])),
+        }
+
+    # API search
+    year_from = int(date_from) if date_from else None
+    year_to = int(date_to) if date_to else None
+    query = _build_query(name, role)
+    endpoint = _role_endpoint(role)
+    fetch_size = min(200, size * 8) if (year_from or year_to) else min(size * 3, 50)
+    params: dict = {"text": query, "size": fetch_size, "from": 0}
+    if offence:
+        params["offcat"] = offence.lower()
+
+    raw = _get(endpoint, params)
+    result = _extract_hits(raw)
+    all_hits = list(result["hits"])
+
+    # Fallback for 'any' role — try structured endpoints if full-text returns nothing
+    if role == "any" and not all_hits:
+        for fb_ep in ("oldbailey_defendant", "oldbailey_victim"):
+            fb = _extract_hits(_get(fb_ep, {"text": f'"{name.strip()}"', "size": fetch_size}))
+            all_hits.extend(fb["hits"])
+            if all_hits:
+                break
+
+    # Date filter and split into reviewed / pending
+    reviewed, pending = [], []
+    for hit in all_hits:
+        src = hit.get("_source", {})
+        idkey = src.get("idkey") or hit.get("_id", "")
+        if not _date_in_range(idkey, year_from, year_to):
+            continue
+        snippet_len = 150 if len(reviewed) >= size else 400
+        rec = _format_record(hit, snippet_length=snippet_len)
+        if len(reviewed) < size:
+            reviewed.append(rec)
+        else:
+            rec["status"] = "pending_review"
+            pending.append(rec)
+
+    # Persist to knowledge file
+    _merge_results(knowledge, key, name, gedcom_id, date_from, date_to, reviewed, pending)
+    _save_knowledge(knowledge)
+
+    log.info(
+        "find_person name=%r role=%s reviewed=%d pending=%d total_api=%d",
+        name, role, len(reviewed), len(pending), result["total"],
+    )
+
+    response: dict = {
+        "source": "api",
+        "name": name,
+        "total_found": result["total"],
+        "records": reviewed,
+    }
+    if pending:
+        response["mode"] = "index"
+        response["pending_logged"] = len(pending)
+        response["message"] = (
+            f"{len(pending)} additional cases written to knowledge file as pending_review. "
+            "Read oldbailey://known/ to review them later."
+        )
+    return response
+
+
 # ── Entry point ──────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
