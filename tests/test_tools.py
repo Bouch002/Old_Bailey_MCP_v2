@@ -190,3 +190,68 @@ class TestFindCrossover:
             with patch.object(server, "KNOWLEDGE_FILE", path):
                 result = server.find_crossover(names=["A", "B", "C", "D", "E", "F"])
                 assert "error" in result
+
+
+class TestSearchProceedings:
+    def test_passes_query_to_api(self):
+        with _empty_knowledge_dir() as tmpdir:
+            path = Path(tmpdir) / "persons.json"
+            with patch.object(server, "KNOWLEDGE_FILE", path):
+                with patch.object(server, "_get") as mock_get:
+                    mock_get.return_value = _make_raw(0, [])
+                    server.search_proceedings(query='+"forgery" +"Bank of England"')
+                    endpoint, params = mock_get.call_args[0]
+                    assert endpoint == "oldbailey_record"
+                    assert '+"forgery"' in params["text"]
+
+    def test_date_filter_applied(self):
+        hits = [_make_hit("t18200101-1"), _make_hit("t18990109-146")]
+        with _empty_knowledge_dir() as tmpdir:
+            path = Path(tmpdir) / "persons.json"
+            with patch.object(server, "KNOWLEDGE_FILE", path):
+                with patch.object(server, "_get") as mock_get:
+                    mock_get.return_value = _make_raw(2, hits)
+                    result = server.search_proceedings(
+                        query="forgery", date_from="1890", date_to="1913"
+                    )
+                    assert all(r["year"] >= 1890 for r in result["results"])
+
+
+class TestSearchOrdinaries:
+    def test_uses_oa_endpoint(self):
+        with patch.object(server, "_get") as mock_get:
+            mock_get.return_value = _make_raw(0, [])
+            server.search_ordinaries(text="Dodd")
+            endpoint = mock_get.call_args[0][0]
+            assert endpoint == "oldbailey_oa"
+
+
+class TestSearchAssociated:
+    def test_uses_assocrec_endpoint(self):
+        with patch.object(server, "_get") as mock_get:
+            mock_get.return_value = _make_raw(0, [])
+            server.search_associated(text="petition")
+            endpoint = mock_get.call_args[0][0]
+            assert endpoint == "oldbailey_assocrec"
+
+
+class TestGetRecord:
+    def test_fetches_single_record(self):
+        raw = {
+            "hits": {
+                "total": {"value": 1},
+                "hits": [_make_hit("t18990109-146", text="Full transcript here.")],
+            }
+        }
+        with patch.object(server, "_get") as mock_get:
+            mock_get.return_value = raw
+            result = server.get_record(idkey="t18990109-146")
+            assert result["idkey"] == "t18990109-146"
+            assert "Full transcript here." in result["text"]
+
+    def test_missing_record_returns_error(self):
+        raw = {"hits": {"total": {"value": 0}, "hits": []}}
+        with patch.object(server, "_get") as mock_get:
+            mock_get.return_value = raw
+            result = server.get_record(idkey="t99999999-1")
+            assert "error" in result

@@ -493,6 +493,136 @@ def find_crossover(
     }
 
 
+@mcp.tool()
+def search_proceedings(
+    query: str,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    size: int = INDEX_THRESHOLD,
+    from_: int = 0,
+) -> dict:
+    """Free-text / Lucene search of Old Bailey Proceedings (trials, verdicts, punishments).
+
+    Use for topic searches, place names, offence types, or conspiracy research.
+    Use + for required terms — NOT AND: +"forgery" +"Bank of England"
+    Do NOT use for simple name lookups — use find_person instead.
+    """
+    year_from = int(date_from) if date_from else None
+    year_to = int(date_to) if date_to else None
+    fetch_size = min(200, size * 4) if (year_from or year_to) else size
+    raw = _get("oldbailey_record", {"text": query, "size": fetch_size, "from": from_})
+    result = _extract_hits(raw)
+    results = []
+    for hit in result["hits"]:
+        src = hit.get("_source", {})
+        idkey = src.get("idkey") or hit.get("_id", "")
+        if not _date_in_range(idkey, year_from, year_to):
+            continue
+        results.append(_format_record(hit))
+        if len(results) >= size:
+            break
+    return {"total": result["total"], "results": results}
+
+
+@mcp.tool()
+def search_ordinaries(
+    text: str,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    size: int = INDEX_THRESHOLD,
+) -> dict:
+    """Search Ordinary's Accounts — Newgate chaplain death-row interviews (1676–1772).
+
+    Rich biographical detail: origins, trade, religion, last confession.
+    Only relevant for pre-1773 cases with a death sentence.
+    Do NOT call this routinely after every defendant search.
+    """
+    year_from = int(date_from) if date_from else None
+    year_to = int(date_to) if date_to else None
+    fetch_size = min(200, size * 4) if (year_from or year_to) else size
+    raw = _get("oldbailey_oa", {"text": text, "size": fetch_size, "from": 0})
+    result = _extract_hits(raw)
+    results = []
+    for hit in result["hits"]:
+        src = hit.get("_source", {})
+        idkey = src.get("idkey") or hit.get("_id", "")
+        if not _date_in_range(idkey, year_from, year_to):
+            continue
+        results.append({
+            "idkey": idkey,
+            "year": _year_from_idkey(idkey),
+            "title": src.get("title", ""),
+            "snippet": (src.get("text", "") or "")[:400],
+            "image_url": (src.get("images") or [None])[0],
+        })
+        if len(results) >= size:
+            break
+    return {"total": result["total"], "results": results}
+
+
+@mcp.tool()
+def search_associated(
+    text: str,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    size: int = INDEX_THRESHOLD,
+) -> dict:
+    """Search Associated Records — petitions, depositions, correspondence.
+
+    Use when a trial result suggests follow-up documents exist, e.g. a death sentence
+    that may have a mercy petition, or when researching evidence chains.
+    Do NOT call this routinely — most searches don't need it.
+    """
+    year_from = int(date_from) if date_from else None
+    year_to = int(date_to) if date_to else None
+    fetch_size = min(200, size * 4) if (year_from or year_to) else size
+    raw = _get("oldbailey_assocrec", {"text": text, "size": fetch_size, "from": 0})
+    result = _extract_hits(raw)
+    results = []
+    for hit in result["hits"]:
+        src = hit.get("_source", {})
+        idkey = src.get("idkey") or hit.get("_id", "")
+        if not _date_in_range(idkey, year_from, year_to):
+            continue
+        results.append({
+            "idkey": idkey,
+            "year": _year_from_idkey(idkey),
+            "title": src.get("title", ""),
+            "snippet": (src.get("text", "") or "")[:400],
+            "image_url": (src.get("images") or [None])[0],
+        })
+        if len(results) >= size:
+            break
+    return {"total": result["total"], "results": results}
+
+
+@mcp.tool()
+def get_record(idkey: str) -> dict:
+    """Fetch the complete text of one specific Old Bailey record by its ID.
+
+    ONLY call this when you have an idkey from search results AND the snippet
+    was insufficient to answer the question. Do not call for multiple records.
+    """
+    raw = _get("oldbailey_record_single", {"idkey": idkey})
+    hits = raw.get("hits", {}).get("hits", [])
+    if not hits:
+        return {"error": f"No record found for idkey={idkey!r}"}
+    src = hits[0].get("_source", {})
+    images = src.get("images", [])
+    return {
+        "idkey": idkey,
+        "year": _year_from_idkey(idkey),
+        "date": src.get("date"),
+        "title": src.get("title"),
+        "text": src.get("text", ""),
+        "defendants": src.get("defendantNames", []),
+        "offences": src.get("offenceCategories", []),
+        "verdicts": src.get("verdictCategories", []),
+        "punishments": src.get("punishmentCategories", []),
+        "image_urls": images,
+    }
+
+
 # ── Entry point ──────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
