@@ -23,6 +23,10 @@ class TestBuildQuery:
         query = server._build_query("Gillan", "officer")
         assert " AND " not in query
 
+    def test_officer_query_no_double_plus(self):
+        query = server._build_query("Gillan", "officer")
+        assert "++" not in query
+
     def test_strips_whitespace(self):
         assert server._build_query("  Gillan  ", "any") == '"Gillan"'
 

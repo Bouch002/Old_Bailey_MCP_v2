@@ -230,7 +230,7 @@ _OFFICER_QUERY = '+(inspector constable sergeant detective "police officer" "P.C
 def _build_query(name: str, role: str) -> str:
     quoted = f'"{name.strip()}"'
     if role == "officer":
-        return f"+{quoted} +{_OFFICER_QUERY}"
+        return f"+{quoted} {_OFFICER_QUERY}"
     return quoted
 
 
