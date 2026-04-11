@@ -21,6 +21,9 @@ class TestYearFromIdkey:
     def test_none(self):
         assert server._year_from_idkey(None) is None
 
+    def test_associated_record_returns_none(self):
+        assert server._year_from_idkey("ar_24593_11886") is None
+
 
 class TestDateInRange:
     def test_within_range(self):

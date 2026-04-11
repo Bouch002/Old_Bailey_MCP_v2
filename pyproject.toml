@@ -18,4 +18,4 @@ dependencies = [
 dev = ["pytest>=9.0.0"]
 
 [tool.hatch.build.targets.wheel]
-packages = []
+only-include = ["server.py"]
