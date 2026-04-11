@@ -259,3 +259,62 @@ def _format_record(hit: dict, snippet_length: int = 400) -> dict:
         "div1_idkey": src.get("div1_idkey", idkey),
         "status": "reviewed",
     }
+
+
+# ── FastMCP server ───────────────────────────────────────────────────────────
+
+mcp = FastMCP(
+    "Old Bailey Online",
+    instructions=(
+        "Historical criminal court records for London, 1674–1913. "
+        "Always use find_person for name lookups — it checks the knowledge file first "
+        "so repeated searches cost zero API calls. "
+        "Use search_proceedings for topic/Lucene queries only. "
+        "When using Lucene, use + for required terms — NOT AND."
+    ),
+)
+
+mcp.add_middleware(
+    ResponseCachingMiddleware(call_tool_settings=CallToolSettings(ttl=300))
+)
+mcp.add_middleware(ResponseLimitingMiddleware(max_size=50_000))
+mcp.add_middleware(LoggingMiddleware())
+
+# ── Resources ────────────────────────────────────────────────────────────────
+
+@mcp.resource("oldbailey://known/")
+def list_known() -> str:
+    """Index of all persons discovered so far. Read this before searching to avoid
+    re-fetching data that is already in the knowledge file."""
+    knowledge = _load_knowledge()
+    if not knowledge:
+        return "No persons in knowledge file yet."
+    lines = ["Known persons:\n"]
+    for key, person in knowledge.items():
+        name = person.get("name", key)
+        n_records = len(person.get("records", []))
+        n_pending = len(person.get("pending_review", []))
+        ranges = person.get("date_ranges_covered", [])
+        range_str = ", ".join(f"{r[0]}–{r[1]}" for r in ranges) if ranges else "no date filter"
+        lines.append(
+            f"- {name} ({key}): {n_records} reviewed, {n_pending} pending | searched: {range_str}"
+        )
+    return "\n".join(lines)
+
+
+@mcp.resource("oldbailey://known/{identifier}")
+def get_known(identifier: str) -> str:
+    """Full case history for one person from the knowledge file.
+    Pass a GEDCOM ID (e.g. @I42@) or a name. No API calls made."""
+    knowledge = _load_knowledge()
+    person = knowledge.get(identifier)
+    if not person:
+        return f"No knowledge found for '{identifier}'."
+    return json.dumps(person, indent=2, ensure_ascii=False)
+
+
+# ── Entry point ──────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    log.info("SERVER START oldbailey-mcp-v2  logfile=%s", _LOG_FILE)
+    mcp.run()
