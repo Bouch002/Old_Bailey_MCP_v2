@@ -354,11 +354,14 @@ def find_person(
     knowledge = _load_knowledge()
     if key in knowledge and _is_range_covered(knowledge[key], date_from, date_to):
         person = knowledge[key]
+        records = person.get("records", [])
+        pending = person.get("pending_review", [])
         return {
             "source": "knowledge",
             "name": person.get("name", name),
-            "records": person.get("records", []),
-            "pending_count": len(person.get("pending_review", [])),
+            "total_found": len(records) + len(pending),
+            "records": records,
+            "pending_count": len(pending),
         }
 
     # API search
@@ -530,6 +533,7 @@ def search_ordinaries(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     size: int = INDEX_THRESHOLD,
+    from_: int = 0,
 ) -> dict:
     """Search Ordinary's Accounts — Newgate chaplain death-row interviews (1676–1772).
 
@@ -540,7 +544,7 @@ def search_ordinaries(
     year_from = int(date_from) if date_from else None
     year_to = int(date_to) if date_to else None
     fetch_size = min(200, size * 4) if (year_from or year_to) else size
-    raw = _get("oldbailey_oa", {"text": text, "size": fetch_size, "from": 0})
+    raw = _get("oldbailey_oa", {"text": text, "size": fetch_size, "from": from_})
     result = _extract_hits(raw)
     results = []
     for hit in result["hits"]:
@@ -566,6 +570,7 @@ def search_associated(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     size: int = INDEX_THRESHOLD,
+    from_: int = 0,
 ) -> dict:
     """Search Associated Records — petitions, depositions, correspondence.
 
@@ -576,7 +581,7 @@ def search_associated(
     year_from = int(date_from) if date_from else None
     year_to = int(date_to) if date_to else None
     fetch_size = min(200, size * 4) if (year_from or year_to) else size
-    raw = _get("oldbailey_assocrec", {"text": text, "size": fetch_size, "from": 0})
+    raw = _get("oldbailey_assocrec", {"text": text, "size": fetch_size, "from": from_})
     result = _extract_hits(raw)
     results = []
     for hit in result["hits"]:
