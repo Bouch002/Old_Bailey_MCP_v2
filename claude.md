@@ -1,6 +1,151 @@
-# Old Bailey MCP Server — v2 Rebuild Plan
+# Old Bailey MCP Server — v2
 
-## What this document is
+---
+
+## As Built
+
+> This section reflects the actual implementation. The original build brief follows below.
+
+### What it is
+
+A FastMCP server (stdio transport) that wraps the Old Bailey Online API — 240 years of London
+criminal court records (1674–1913). It acts as a **living research memory**: every person found
+is written to a persistent knowledge file. Subsequent searches read that file first; the API is
+only called for genuinely new queries.
+
+**Stack:** Python 3.13 · FastMCP 3.2.3 · httpx (sync) · python-dotenv · single file (`server.py`)
+
+**Run:** `uv run python server.py`
+**Tests:** `uv run pytest tests/ -v`
+
+---
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────┐
+│              Claude / GEDCOM MCP                │
+└──────────────────┬──────────────────────────────┘
+                   │ MCP (stdio)
+┌──────────────────▼──────────────────────────────┐
+│           Old Bailey MCP v2  (server.py)        │
+│                                                 │
+│  Middleware (FastMCP)                           │
+│  ─────────────────────────────────────────────  │
+│  ResponseCachingMiddleware  TTL 300s            │
+│  ResponseLimitingMiddleware 50KB cap            │
+│  LoggingMiddleware          stderr + file       │
+│                                                 │
+│  Tools                   Resources              │
+│  ──────                  ─────────              │
+│  find_person        ──▶  oldbailey://known/     │
+│  find_crossover     ──▶  oldbailey://known/{id} │
+│  search_proceedings                             │
+│  search_ordinaries                              │
+│  search_associated                              │
+│  get_record                                     │
+│         │                                       │
+│         ▼                                       │
+│  knowledge/persons.json  ◀── persistent memory  │
+│         │                                       │
+│         ▼                                       │
+│  Old Bailey API (dhi.ac.uk)                     │
+│  oldbailey_record         oldbailey_defendant   │
+│  oldbailey_record_single  oldbailey_victim      │
+│  oldbailey_oa             oldbailey_offence     │
+│  oldbailey_assocrec       oldbailey_verdict     │
+│                           oldbailey_punishment  │
+└─────────────────────────────────────────────────┘
+         ▲
+         │ optional: reads .ged file directly
+  GEDCOM_FILE env var (.env)
+```
+
+---
+
+### Tools (as built)
+
+| Tool | Purpose | Key behaviour |
+|---|---|---|
+| `find_person` | Name lookup across all roles | Knowledge-first; GEDCOM enrichment; index mode when >8 results |
+| `find_crossover` | Cases where 2–5 people appear together | Knowledge intersection (zero API); falls back to `+`-operator query |
+| `search_proceedings` | Free-text / Lucene search of Proceedings | Topic, place, offence searches; NOT for names |
+| `search_ordinaries` | Newgate chaplain death-row interviews (1676–1772) | Pre-1773 death sentences only |
+| `search_associated` | Petitions, depositions, correspondence | Use after finding a trial, not routinely |
+| `get_record` | Full transcript by idkey | Only call when snippet is insufficient |
+
+**Resources (read-only, no API calls):**
+- `oldbailey://known/` — index of all known persons
+- `oldbailey://known/{name_or_gedcom_id}` — full case history for one person
+
+---
+
+### Knowledge file
+
+**Path:** `knowledge/persons.json` (gitignored)
+
+Keyed by GEDCOM ID when available, name otherwise. Tracks:
+- `records` — reviewed cases with snippet, image URL, offences/verdicts/punishments
+- `pending_review` — overflow cases (when results exceed threshold) logged for later
+- `date_ranges_covered` — prevents re-querying already-searched ranges
+
+---
+
+### GEDCOM integration
+
+Set `GEDCOM_FILE=/path/to/your/file.ged` in `.env`. When `gedcom_id` is passed to
+`find_person`, the server reads the `.ged` file directly and auto-fills `date_from`,
+`date_to`, and `role` from the individual's birth year, death year, and occupation.
+
+Occupation → role mapping: police/constable/inspector/detective/sergeant → `"officer"`;
+everything else → `"any"`.
+
+---
+
+### File structure
+
+```
+Old_Bailey_MCP_v2/
+├── server.py              ← entire implementation (single file)
+├── .env                   ← local config (gitignored)
+├── .env.example           ← template
+├── .gitignore
+├── pyproject.toml
+├── requirements.txt       ← fastmcp, httpx, python-dotenv
+├── knowledge/             ← gitignored
+│   └── persons.json       ← persistent research memory
+└── tests/
+    ├── conftest.py
+    ├── test_utils.py
+    ├── test_knowledge.py
+    ├── test_gedcom.py
+    ├── test_query.py
+    ├── test_tools.py
+    └── test_smoke.py      ← real API calls (--run-slow flag)
+```
+
+---
+
+### Divergences from original spec
+
+The original build brief (below) specified different tool names and a `batch_search` tool.
+What was actually built reflects a later design iteration documented in
+`docs/superpowers/specs/2026-04-09-old-bailey-mcp-v2-design.md`.
+
+| Spec said | As built |
+|---|---|
+| `search_person` | `find_person` |
+| `search_proceedings` | `search_proceedings` (unchanged) |
+| `batch_search` | Not built — knowledge file + caching solves the same problem |
+| No resources | `oldbailey://known/` resources added |
+| No GEDCOM integration | `GEDCOM_FILE` + inline `.ged` parser |
+| No knowledge file | `knowledge/persons.json` — core feature |
+
+---
+
+## Original Build Brief
+
+### What this document is
 
 This is the build brief for **v2 of the Old Bailey MCP server**. It replaces the hand-rolled
 JSON-RPC implementation (`server.py` v1) with a proper implementation using the official
