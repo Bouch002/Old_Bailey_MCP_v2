@@ -1,9 +1,8 @@
 # Local config — contains personal file paths
 .env
 
-# Personal research data — never commit
-knowledge/*
-!knowledge/.gitkeep
+# Research cache — SQLite db created at runtime, do not commit
+oldbailey_cache.db
 
 # Logs — contain real names and API queries
 *.log
